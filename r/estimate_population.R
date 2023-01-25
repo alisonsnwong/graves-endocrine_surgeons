@@ -141,9 +141,6 @@ isochrone_120
 isochrone_90
 isochrone_60
 
-# 45 mins
-# create branch but don't merge 
-
 
 
 
