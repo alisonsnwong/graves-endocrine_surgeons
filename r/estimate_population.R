@@ -7,12 +7,11 @@ library(tidycensus)
 library(tidyverse)
 
 census_api_key("API KEY", install = TRUE)
-load_variables(2020, "acs5", cache=TRUE)
+acs <- load_variables(2020, "acs5", cache=TRUE)
 load_variables(2020, "pl")
 
 ##### Tidycensus section
 # Function to read csv of census variables and search population data of the census variables in tidycensus 
-# Removed geometry to decrease run time 
 read_census_variable_csv <- function(x) {
   
   census_var <- read.csv(x) # Read csv
@@ -70,7 +69,8 @@ read_census_variable_csv <- function(x) {
 }
 
 # Set working directory
-setwd("~/git/graves-endocrine_surgeons")
+path <- "~/git/graves-endocrine_surgeons"
+setwd(path)
 
 # Use function to pull population data from the tidycensus package
 csv <- "docs/census_variables.csv"
@@ -88,7 +88,6 @@ files <- list.files("data/gpkg/", pattern="*.gpkg", full.names=TRUE)
 
 # Format attribute table from each isochrone file to its own data frame within a large list 'ldf'
 ldf <- lapply(files, st_read) # read files to ldf 
-ldf <- lapply(ldf, st_drop_geometry) # Remove geometry to decrease run time
 
 # Filename saved to to name future data frames within a list 
 filenames <- list.files("data/gpkg/", pattern="*.gpkg", full.names=FALSE)
@@ -175,8 +174,43 @@ isochrone_90 <- isochrone_90 %>%
 isochrone_60 <- isochrone_60 %>% 
   arrange(factor(variable, levels = var_order))
 
-### FINAL TABLES
+# List with estimated population for each variable (including geometries)
+estimate_list_geometry <- list()
+for (i in 1:length(join_list)){
+  
+  # Subset out important columns from the join_list data frames 
+  variable_tract <- data.frame(GEOID = join_list[[i]]$GEOID, # tract ID 
+                               variable = join_list[[i]]$variable.y, # name of census variable
+                               variable_population_estimate = join_list[[i]][,8]*join_list[[i]]$value,
+                               geometry = join_list[[i]]$geom)
+  name <- filenames[[i]]
+  estimate_list_geometry[[name]] <- variable_tract
+}
+
+### Vector dataset section
+# Function to reshape each data frame within 'estimate_list_geometry'
+reshape <- function(df) {
+  # Group by GEOID and variable and sum the variable_population column
+  df_grouped <- df %>% 
+    group_by(GEOID, variable) %>% 
+    summarise(total_population = sum(variable_population_estimate),
+              geometry = first(geometry)) # geometry is the same for the same GEOID
+  
+  # Reshape the data frame so each variable has its own column
+  df_reshaped <- df_grouped %>% 
+    spread(key = variable, value = total_population)
+  
+  return(df_reshaped)
+}
+
+# Apply reshape function to each isochrone in the list
+pop_geom_list <- lapply(estimate_list_geometry, reshape)
+
+### FINAL TABLES:
+# A summary table of total populations inside and outside the isochrone boundaries
 isochrone_120
 isochrone_90
 isochrone_60
 
+# A vector dataset with the spatial data and the attributes, not repeating the geometries, but having a set of values for each polygon
+pop_geom_list
